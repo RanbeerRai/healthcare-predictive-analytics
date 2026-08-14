@@ -1,16 +1,18 @@
 # Healthcare Predictive Analytics Platform
 
-Cardiovascular risk classification pipeline benchmarking Logistic Regression, Random Forest, and XGBoost on the [UCI Heart Disease (Cleveland)](https://archive.ics.uci.edu/dataset/45/heart+disease) dataset.
+Most of my hands-on ML work has been text/tabular-security-adjacent stuff through my ConnexPay internship, so I wanted a project in a completely different domain to make sure I actually understood the fundamentals and wasn't just pattern-matching one problem type. Cardiovascular risk prediction on the [UCI Heart Disease (Cleveland)](https://archive.ics.uci.edu/dataset/45/heart+disease) dataset felt like a good fit — small, clean-ish, well-studied, and a real screening use case where the precision/recall tradeoff actually matters.
 
-## What this does
+## Approach
 
-1. Loads 303 patient records (13 clinical features: age, sex, chest pain type, resting blood pressure, cholesterol, resting ECG, max heart rate, exercise-induced angina, etc.)
-2. Median-imputes a small number of missing values (angiography/thallium-scan results not recorded for every patient), then standardizes features
-3. Benchmarks **Logistic Regression**, **Random Forest**, and **XGBoost** under 5-fold stratified cross-validation with grid-search hyperparameter tuning
-4. Evaluates on ROC-AUC, precision-recall AUC, and calibration (Brier score) — not raw accuracy, since this is a screening context
-5. Selects the final model by penalizing the train/test generalization gap, not just picking the highest raw test score
+I loaded the 303 patient records (13 clinical features — age, chest pain type, resting blood pressure, cholesterol, max heart rate, etc.), handled the handful of missing angiography/thallium values, and then benchmarked three models instead of just reaching for whatever's trendiest:
 
-## Results (this run)
+- **Logistic Regression** as an interpretable baseline
+- **Random Forest** for nonlinear feature interactions
+- **XGBoost**, mostly to see if it actually earns its reputation on a dataset this small
+
+All three went through 5-fold stratified CV with grid-search tuning, then got evaluated on ROC-AUC, PR-AUC, and calibration — not raw accuracy, since a missed at-risk patient and an unnecessary follow-up are not the same kind of mistake.
+
+## Results
 
 | Model | CV ROC-AUC | Test ROC-AUC | Test PR-AUC | Generalization Gap |
 |---|---|---|---|---|
@@ -18,16 +20,18 @@ Cardiovascular risk classification pipeline benchmarking Logistic Regression, Ra
 | **Random Forest (selected)** | 0.893 | **0.964** | 0.958 | -0.021 |
 | XGBoost | 0.885 | 0.939 | 0.938 | -0.009 |
 
-Full metrics: [`results/metrics_summary.json`](results/metrics_summary.json). Plots: ROC curves, precision-recall curves, calibration curves, and the winning model's confusion matrix are in [`results/`](results/).
+Full metrics live in [`results/metrics_summary.json`](results/metrics_summary.json), and the plots (ROC curves, precision-recall curves, calibration curves, confusion matrix) are in [`results/`](results/).
 
-## Key design decisions (for interview walkthroughs)
+Honestly, I half-expected XGBoost to just win outright — that's the reputation it has. Watching it come in third was a good reminder that "more powerful model" and "better model for this dataset" aren't the same claim, especially once you're down to 303 rows.
 
-- **Why three model families, not just XGBoost?** XGBoost usually wins on tabular data, but with only 303 rows, more model complexity isn't automatically better — benchmarking a simple linear baseline alongside two ensemble methods tests that assumption instead of taking it on faith. In this run, XGBoost actually came in third.
-- **Why median imputation instead of dropping rows?** The missing values (in `ca` and `thal`) affect only ~2% of rows. Dropping them would shrink an already-small dataset for no real benefit. Median (not mean) because both fields are ordinal/categorical-coded, not continuous.
-- **Why penalize the generalization gap during model selection?** On a 303-row dataset, the single test-set ROC-AUC can be somewhat lucky. Selecting purely on test score risks picking a model that overfit the training folds and happened to also do well on this particular test split. Ranking by test score minus a generalization-gap penalty is a more defensible selection rule.
-- **Why ROC-AUC/PR-AUC/calibration instead of accuracy?** In a risk-screening context, false negatives (missed at-risk patients) and false positives (unnecessary follow-up) have very different real costs, and accuracy hides that tradeoff entirely.
+## Why I made the choices I made
 
-## Project structure
+- **Three models, not just the fancy one.** Benchmarking a plain linear baseline against two tree ensembles tests the "complexity wins" assumption instead of just trusting it.
+- **Median imputation over dropping rows.** `ca` and `thal` are missing for maybe 2% of patients. Throwing those rows away shrinks an already-small dataset for basically no upside. Median specifically because both fields are ordinal-coded, not continuous — a fractional mean wouldn't mean anything.
+- **Penalizing the generalization gap, not just chasing the best test score.** At this sample size, one lucky test split can flatter an overfit model. I'd rather pick the model that's consistent between train and test than the one that happened to nail this particular 61-patient holdout.
+- **ROC-AUC/PR-AUC/calibration over plain accuracy.** A missed at-risk patient and an unnecessary follow-up are not equally bad mistakes, and accuracy pretends they are.
+
+## Structure
 
 ```
 ├── data/heart_disease.csv          # Raw UCI dataset
@@ -48,3 +52,7 @@ pip install -r requirements.txt
 python run_pipeline.py
 # or open notebooks/healthcare_predictive_analytics.ipynb
 ```
+
+## What I'd add with more time
+
+Interpretability, mainly — SHAP values on the Random Forest to see which features are actually driving individual predictions, since "trust me, it's 96% ROC-AUC" isn't something a clinician should have to take on faith. I'd also want a second, larger dataset to check whether the model selection even holds up outside this one 303-patient sample.
